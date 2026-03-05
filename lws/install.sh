@@ -231,7 +231,30 @@ main() {
 
   echo
   info "LWS installed successfully!"
-  info "Run 'lws --help' to get started (you may need to restart your shell)"
+
+  local shell_name
+  shell_name="$(basename "${SHELL:-/bin/bash}")"
+  local source_cmd=""
+  case "$shell_name" in
+    zsh)  source_cmd="source ~/.zshrc" ;;
+    bash)
+      if [ -f "$HOME/.bash_profile" ]; then
+        source_cmd="source ~/.bash_profile"
+      else
+        source_cmd="source ~/.bashrc"
+      fi
+      ;;
+    fish) source_cmd="source ~/.config/fish/config.fish" ;;
+  esac
+
+  if [ -n "$source_cmd" ]; then
+    info "Run the following to start using lws immediately:"
+    echo
+    echo "  $source_cmd"
+    echo
+  else
+    info "Restart your shell, then run 'lws --help' to get started."
+  fi
 }
 
 main "$@"
