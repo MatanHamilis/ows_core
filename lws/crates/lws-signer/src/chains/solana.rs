@@ -52,6 +52,43 @@ impl ChainSigner for SolanaSigner {
         self.sign(private_key, tx_bytes)
     }
 
+    fn encode_signed_transaction(
+        &self,
+        tx_bytes: &[u8],
+        signature: &SignOutput,
+    ) -> Result<Vec<u8>, SignerError> {
+        // Solana serialized transaction format:
+        // [compact-u16: num_signatures] [64-byte signatures...] [message...]
+        // Replace the first 64-byte zero-signature with the real signature.
+        if signature.signature.len() != 64 {
+            return Err(SignerError::InvalidTransaction(
+                "expected 64-byte Ed25519 signature".into(),
+            ));
+        }
+        if tx_bytes.is_empty() {
+            return Err(SignerError::InvalidTransaction("empty transaction".into()));
+        }
+
+        // First byte is compact-u16 for number of signatures (typically 0x01)
+        let num_sigs = tx_bytes[0] as usize;
+        if num_sigs == 0 {
+            return Err(SignerError::InvalidTransaction(
+                "transaction has no signature slots".into(),
+            ));
+        }
+        let sigs_end = 1 + num_sigs * 64;
+        if tx_bytes.len() < sigs_end {
+            return Err(SignerError::InvalidTransaction(
+                "transaction too short for declared signature slots".into(),
+            ));
+        }
+
+        let mut signed = tx_bytes.to_vec();
+        // Replace first signature slot (bytes 1..65)
+        signed[1..65].copy_from_slice(&signature.signature);
+        Ok(signed)
+    }
+
     fn sign_message(&self, private_key: &[u8], message: &[u8]) -> Result<SignOutput, SignerError> {
         // Solana doesn't use a special prefix for message signing
         self.sign(private_key, message)
@@ -157,6 +194,31 @@ mod tests {
         let signer = SolanaSigner;
         let bad_key = vec![0u8; 16];
         assert!(signer.derive_address(&bad_key).is_err());
+    }
+
+    #[test]
+    fn test_encode_signed_transaction_splices_signature() {
+        let privkey =
+            hex::decode("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+                .unwrap();
+        let signer = SolanaSigner;
+
+        // Build a minimal Solana serialized tx: [1 sig slot] [64 zero bytes] [message]
+        let mut tx_bytes = vec![0x01]; // 1 signature slot
+        tx_bytes.extend_from_slice(&[0u8; 64]); // placeholder zero signature
+        tx_bytes.extend_from_slice(b"fake_message_payload");
+
+        // Sign the message portion (bytes after the signature slots)
+        let message = &tx_bytes[65..];
+        let output = signer.sign(&privkey, message).unwrap();
+
+        let signed = signer.encode_signed_transaction(&tx_bytes, &output).unwrap();
+
+        // The signature should be spliced in at bytes 1..65
+        assert_eq!(&signed[1..65], &output.signature[..]);
+        // The rest of the tx should be unchanged
+        assert_eq!(&signed[65..], &tx_bytes[65..]);
+        assert_eq!(signed.len(), tx_bytes.len());
     }
 
     #[test]

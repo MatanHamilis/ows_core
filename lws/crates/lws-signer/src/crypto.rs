@@ -5,6 +5,7 @@ use aes_gcm::{
 use rand::RngCore;
 use scrypt::{scrypt, Params as ScryptParams};
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroize;
 
 use crate::zeroizing::SecretBytes;
 
@@ -66,6 +67,7 @@ pub fn encrypt(plaintext: &[u8], passphrase: &str) -> Result<CryptoEnvelope, Cry
         .map_err(|e| CryptoError::EncryptionFailed(e.to_string()))?;
 
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&derived_key));
+    derived_key.zeroize();
     let nonce = Nonce::from_slice(&iv);
     let ciphertext_with_tag = cipher
         .encrypt(nonce, plaintext)
@@ -120,6 +122,7 @@ pub fn decrypt(envelope: &CryptoEnvelope, passphrase: &str) -> Result<SecretByte
         .map_err(|e| CryptoError::DecryptionFailed(e.to_string()))?;
 
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&derived_key));
+    derived_key.zeroize();
     let nonce = Nonce::from_slice(&iv);
 
     // Reconstruct the combined ciphertext + tag expected by aes-gcm
@@ -186,5 +189,26 @@ mod tests {
 
         let decrypted = decrypt(&deserialized, "pass").unwrap();
         assert_eq!(decrypted.expose(), plaintext);
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_large_payload() {
+        // Regression: ensure correctness is preserved with zeroization changes
+        let plaintext = vec![0xAB; 1024];
+        let passphrase = "test-passphrase-for-zeroize";
+
+        let envelope = encrypt(&plaintext, passphrase).unwrap();
+        let decrypted = decrypt(&envelope, passphrase).unwrap();
+
+        assert_eq!(decrypted.expose(), &plaintext[..]);
+    }
+
+    #[test]
+    fn test_decrypt_wrong_passphrase_still_fails() {
+        // Regression: zeroization changes must not break error handling
+        let plaintext = b"sensitive data";
+        let envelope = encrypt(plaintext, "correct").unwrap();
+        let result = decrypt(&envelope, "wrong");
+        assert!(result.is_err());
     }
 }

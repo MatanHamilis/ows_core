@@ -46,7 +46,15 @@ impl EvmSigner {
     ) -> Result<SignOutput, SignerError> {
         let typed_data = crate::eip712::parse_typed_data(typed_data_json)?;
         let hash = crate::eip712::hash_typed_data(&typed_data)?;
-        self.sign(private_key, &hash)
+        let mut output = self.sign(private_key, &hash)?;
+
+        // EIP-712 convention: v = 27 + recovery_id
+        if let Some(rid) = output.recovery_id {
+            let v = rid + 27;
+            output.signature[64] = v;
+            output.recovery_id = Some(v);
+        }
+        Ok(output)
     }
 }
 
@@ -118,6 +126,29 @@ impl ChainSigner for EvmSigner {
         self.sign(private_key, &hash)
     }
 
+    fn encode_signed_transaction(
+        &self,
+        tx_bytes: &[u8],
+        signature: &SignOutput,
+    ) -> Result<Vec<u8>, SignerError> {
+        if signature.signature.len() != 65 {
+            return Err(SignerError::InvalidTransaction(
+                "expected 65-byte signature (r || s || v)".into(),
+            ));
+        }
+
+        let v = signature.signature[64];
+        let r: [u8; 32] = signature.signature[..32]
+            .try_into()
+            .map_err(|_| SignerError::InvalidTransaction("bad r".into()))?;
+        let s: [u8; 32] = signature.signature[32..64]
+            .try_into()
+            .map_err(|_| SignerError::InvalidTransaction("bad s".into()))?;
+
+        crate::rlp::encode_signed_typed_tx(tx_bytes, v, &r, &s)
+            .map_err(|e| SignerError::InvalidTransaction(e.to_string()))
+    }
+
     fn sign_message(&self, private_key: &[u8], message: &[u8]) -> Result<SignOutput, SignerError> {
         // EIP-191 personal sign prefix
         let prefix = format!("\x19Ethereum Signed Message:\n{}", message.len());
@@ -126,7 +157,15 @@ impl ChainSigner for EvmSigner {
         prefixed.extend_from_slice(message);
 
         let hash = Keccak256::digest(&prefixed);
-        self.sign(private_key, &hash)
+        let mut output = self.sign(private_key, &hash)?;
+
+        // EIP-191 convention: v = 27 + recovery_id
+        if let Some(rid) = output.recovery_id {
+            let v = rid + 27;
+            output.signature[64] = v;
+            output.recovery_id = Some(v);
+        }
+        Ok(output)
     }
 
     fn default_derivation_path(&self, index: u32) -> String {
@@ -227,6 +266,71 @@ mod tests {
     }
 
     #[test]
+    fn test_sign_message_v_byte_27_or_28() {
+        // EIP-191 personal_sign convention: v must be 27 or 28
+        let privkey =
+            hex::decode("4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318")
+                .unwrap();
+        let signer = EvmSigner;
+        let result = signer.sign_message(&privkey, b"Hello World").unwrap();
+        let v = result.signature[64];
+        assert!(
+            v == 27 || v == 28,
+            "EIP-191 personal_sign v byte should be 27 or 28, got {v}"
+        );
+    }
+
+    #[test]
+    fn test_sign_message_recovery_id_matches_v() {
+        let privkey =
+            hex::decode("4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318")
+                .unwrap();
+        let signer = EvmSigner;
+        let result = signer.sign_message(&privkey, b"test recovery id").unwrap();
+        let v = result.signature[64];
+        let recovery_id = result.recovery_id.unwrap();
+        assert_eq!(
+            v, recovery_id,
+            "v byte in signature should match recovery_id field"
+        );
+        assert!(
+            recovery_id == 27 || recovery_id == 28,
+            "recovery_id for EIP-191 should be 27 or 28, got {recovery_id}"
+        );
+    }
+
+    #[test]
+    fn test_sign_message_verifiable_with_v_27_28() {
+        // Verify signature is valid AND v is correct
+        let privkey =
+            hex::decode("4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318")
+                .unwrap();
+        let signer = EvmSigner;
+        let result = signer.sign_message(&privkey, b"verify me").unwrap();
+
+        // Signature should verify
+        let signing_key = SigningKey::from_slice(&privkey).unwrap();
+        let verifying_key = signing_key.verifying_key();
+        let r_bytes: [u8; 32] = result.signature[..32].try_into().unwrap();
+        let s_bytes: [u8; 32] = result.signature[32..64].try_into().unwrap();
+        let sig = k256::ecdsa::Signature::from_scalars(r_bytes, s_bytes).unwrap();
+
+        let prefix = format!("\x19Ethereum Signed Message:\n{}", b"verify me".len());
+        let mut prefixed = Vec::new();
+        prefixed.extend_from_slice(prefix.as_bytes());
+        prefixed.extend_from_slice(b"verify me");
+        let hash = Keccak256::digest(&prefixed);
+
+        verifying_key
+            .verify_prehash(&hash, &sig)
+            .expect("signature should verify");
+
+        // AND v must be 27 or 28
+        let v = result.signature[64];
+        assert!(v == 27 || v == 28, "v should be 27 or 28, got {v}");
+    }
+
+    #[test]
     fn test_deterministic_address() {
         let privkey =
             hex::decode("4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318")
@@ -235,6 +339,47 @@ mod tests {
         let addr1 = signer.derive_address(&privkey).unwrap();
         let addr2 = signer.derive_address(&privkey).unwrap();
         assert_eq!(addr1, addr2);
+    }
+
+    #[test]
+    fn test_encode_signed_transaction_eip1559() {
+        use crate::rlp;
+
+        // Build a minimal unsigned EIP-1559 transaction
+        let items: Vec<u8> = [
+            rlp::encode_bytes(&[1]),   // chain_id = 1
+            rlp::encode_bytes(&[]),    // nonce = 0
+            rlp::encode_bytes(&[1]),   // maxPriorityFeePerGas = 1
+            rlp::encode_bytes(&[100]), // maxFeePerGas = 100
+            rlp::encode_bytes(&[0x52, 0x08]), // gasLimit = 21000
+            rlp::encode_bytes(&[0xDE, 0xAD]), // to (truncated for test)
+            rlp::encode_bytes(&[]),    // value = 0
+            rlp::encode_bytes(&[]),    // data = empty
+            rlp::encode_list(&[]),     // accessList = empty
+        ]
+        .concat();
+
+        let mut unsigned_tx = vec![0x02];
+        unsigned_tx.extend_from_slice(&rlp::encode_list(&items));
+
+        // Sign it
+        let privkey =
+            hex::decode("4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318")
+                .unwrap();
+        let signer = EvmSigner;
+        let output = signer.sign_transaction(&privkey, &unsigned_tx).unwrap();
+
+        // Encode the signed transaction
+        let signed_tx = signer
+            .encode_signed_transaction(&unsigned_tx, &output)
+            .unwrap();
+
+        // Verify structure
+        assert_eq!(signed_tx[0], 0x02, "should preserve type byte");
+        assert!(
+            signed_tx.len() > unsigned_tx.len(),
+            "signed tx should be larger than unsigned tx"
+        );
     }
 
     #[test]

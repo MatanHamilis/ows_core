@@ -39,6 +39,22 @@ impl BitcoinSigner {
     }
 }
 
+/// Encode an integer as a Bitcoin CompactSize (varint).
+fn encode_compact_size(buf: &mut Vec<u8>, n: usize) {
+    if n < 253 {
+        buf.push(n as u8);
+    } else if n <= 0xFFFF {
+        buf.push(0xFD);
+        buf.extend_from_slice(&(n as u16).to_le_bytes());
+    } else if n <= 0xFFFF_FFFF {
+        buf.push(0xFE);
+        buf.extend_from_slice(&(n as u32).to_le_bytes());
+    } else {
+        buf.push(0xFF);
+        buf.extend_from_slice(&(n as u64).to_le_bytes());
+    }
+}
+
 impl ChainSigner for BitcoinSigner {
     fn chain_type(&self) -> ChainType {
         ChainType::Bitcoin
@@ -108,10 +124,9 @@ impl ChainSigner for BitcoinSigner {
     fn sign_message(&self, private_key: &[u8], message: &[u8]) -> Result<SignOutput, SignerError> {
         // Bitcoin message signing: double-SHA256 of prefixed message
         let prefix = b"\x18Bitcoin Signed Message:\n";
-        let msg_len = message.len() as u8;
         let mut data = Vec::new();
         data.extend_from_slice(prefix);
-        data.push(msg_len);
+        encode_compact_size(&mut data, message.len());
         data.extend_from_slice(message);
 
         let hash = Sha256::digest(Sha256::digest(&data));
@@ -172,5 +187,100 @@ mod tests {
         assert_eq!(signer.chain_type(), ChainType::Bitcoin);
         assert_eq!(signer.curve(), Curve::Secp256k1);
         assert_eq!(signer.coin_type(), 0);
+    }
+
+    #[test]
+    fn test_sign_message_long_message_varint() {
+        use k256::ecdsa::signature::hazmat::PrehashVerifier;
+
+        let mut privkey = vec![0u8; 31];
+        privkey.push(1u8);
+        let signer = BitcoinSigner::mainnet();
+
+        // Message longer than 252 bytes requires multi-byte CompactSize varint
+        let message = vec![0x42u8; 300];
+        let result = signer.sign_message(&privkey, &message).unwrap();
+
+        // Compute expected hash with CORRECT varint encoding:
+        // CompactSize for 300: 0xFD followed by 300 as 2-byte LE (0x2C, 0x01)
+        let mut expected_data = Vec::new();
+        expected_data.extend_from_slice(b"\x18Bitcoin Signed Message:\n");
+        expected_data.push(0xFD);
+        expected_data.extend_from_slice(&300u16.to_le_bytes());
+        expected_data.extend_from_slice(&message);
+
+        let expected_hash = Sha256::digest(Sha256::digest(&expected_data));
+
+        // Verify signature against the correctly computed hash
+        let signing_key = SigningKey::from_slice(&privkey).unwrap();
+        let verifying_key = signing_key.verifying_key();
+        let r: [u8; 32] = result.signature[..32].try_into().unwrap();
+        let s: [u8; 32] = result.signature[32..64].try_into().unwrap();
+        let sig = k256::ecdsa::Signature::from_scalars(r, s).unwrap();
+
+        verifying_key
+            .verify_prehash(&expected_hash, &sig)
+            .expect("signature should verify with correct varint encoding for long messages");
+    }
+
+    #[test]
+    fn test_sign_message_253_byte_varint_boundary() {
+        use k256::ecdsa::signature::hazmat::PrehashVerifier;
+
+        let mut privkey = vec![0u8; 31];
+        privkey.push(1u8);
+        let signer = BitcoinSigner::mainnet();
+
+        // 253 bytes: the exact boundary where single-byte varint becomes invalid
+        let message = vec![0xAA; 253];
+        let result = signer.sign_message(&privkey, &message).unwrap();
+
+        let mut expected_data = Vec::new();
+        expected_data.extend_from_slice(b"\x18Bitcoin Signed Message:\n");
+        expected_data.push(0xFD);
+        expected_data.extend_from_slice(&253u16.to_le_bytes());
+        expected_data.extend_from_slice(&message);
+
+        let expected_hash = Sha256::digest(Sha256::digest(&expected_data));
+
+        let signing_key = SigningKey::from_slice(&privkey).unwrap();
+        let verifying_key = signing_key.verifying_key();
+        let r: [u8; 32] = result.signature[..32].try_into().unwrap();
+        let s: [u8; 32] = result.signature[32..64].try_into().unwrap();
+        let sig = k256::ecdsa::Signature::from_scalars(r, s).unwrap();
+
+        verifying_key
+            .verify_prehash(&expected_hash, &sig)
+            .expect("signature should verify at varint boundary (253 bytes)");
+    }
+
+    #[test]
+    fn test_sign_message_short_message_still_works() {
+        use k256::ecdsa::signature::hazmat::PrehashVerifier;
+
+        let mut privkey = vec![0u8; 31];
+        privkey.push(1u8);
+        let signer = BitcoinSigner::mainnet();
+
+        // Short message (< 253 bytes) uses single-byte varint
+        let message = b"Hello Bitcoin!";
+        let result = signer.sign_message(&privkey, message).unwrap();
+
+        let mut expected_data = Vec::new();
+        expected_data.extend_from_slice(b"\x18Bitcoin Signed Message:\n");
+        expected_data.push(message.len() as u8); // single byte varint OK for < 253
+        expected_data.extend_from_slice(message);
+
+        let expected_hash = Sha256::digest(Sha256::digest(&expected_data));
+
+        let signing_key = SigningKey::from_slice(&privkey).unwrap();
+        let verifying_key = signing_key.verifying_key();
+        let r: [u8; 32] = result.signature[..32].try_into().unwrap();
+        let s: [u8; 32] = result.signature[32..64].try_into().unwrap();
+        let sig = k256::ecdsa::Signature::from_scalars(r, s).unwrap();
+
+        verifying_key
+            .verify_prehash(&expected_hash, &sig)
+            .expect("signature should verify for short messages");
     }
 }

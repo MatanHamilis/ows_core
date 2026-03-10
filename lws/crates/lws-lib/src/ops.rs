@@ -468,11 +468,14 @@ pub fn sign_and_send(
     let signer = signer_for_chain(chain.chain_type);
     let output = signer.sign_transaction(key.expose(), &tx_bytes)?;
 
-    // 2. Resolve RPC URL using exact chain_id
+    // 2. Encode the full signed transaction
+    let signed_tx = signer.encode_signed_transaction(&tx_bytes, &output)?;
+
+    // 3. Resolve RPC URL using exact chain_id
     let rpc = resolve_rpc_url(chain.chain_id, chain.chain_type, rpc_url)?;
 
-    // 3. Broadcast
-    let tx_hash = broadcast(chain.chain_type, &rpc, &output.signature)?;
+    // 4. Broadcast the full signed transaction
+    let tx_hash = broadcast(chain.chain_type, &rpc, &signed_tx)?;
 
     Ok(SendResult { tx_hash })
 }

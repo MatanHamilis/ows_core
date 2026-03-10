@@ -41,6 +41,22 @@ pub trait ChainSigner: Send + Sync {
         tx_bytes: &[u8],
     ) -> Result<SignOutput, SignerError>;
 
+    /// Encode the full signed transaction from the unsigned transaction bytes
+    /// and the signing output. Returns the bytes suitable for broadcasting.
+    ///
+    /// The default implementation returns an error — chains must opt in.
+    fn encode_signed_transaction(
+        &self,
+        tx_bytes: &[u8],
+        signature: &SignOutput,
+    ) -> Result<Vec<u8>, SignerError> {
+        let _ = (tx_bytes, signature);
+        Err(SignerError::InvalidTransaction(format!(
+            "encode_signed_transaction not implemented for {}",
+            self.chain_type()
+        )))
+    }
+
     /// Returns the default BIP-44 derivation path template for this chain.
     fn default_derivation_path(&self, index: u32) -> String;
 }
