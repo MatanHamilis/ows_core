@@ -2,8 +2,10 @@
 
 Secure signing and wallet management for every chain. One vault, one interface — keys never leave your machine.
 
+[![CI](https://github.com/dawnlabsai/lws/actions/workflows/ci.yml/badge.svg)](https://github.com/dawnlabsai/lws/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@local-wallet-standard/node)](https://www.npmjs.com/package/@local-wallet-standard/node)
 [![PyPI](https://img.shields.io/pypi/v/local-wallet-standard)](https://pypi.org/project/local-wallet-standard/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## Why LWS
 
