@@ -7,12 +7,12 @@
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Vault directory (`~/.ows/wallets/`) | Done | `ows-lib/src/vault.rs` |
-| Wallet file format (OWS envelope over Keystore v3) | Done | `ows-core/src/wallet_file.rs` |
+| Wallet file format (OWS v2 envelope over Keystore v3) | Done | `ows-core/src/wallet_file.rs` |
 | Filesystem permissions (700 dirs, 600 files) | Done | `ows-lib/src/vault.rs` |
 | Permission verification on startup | Partial | Warns but does not refuse to operate |
 | Audit log (`~/.ows/logs/audit.jsonl`) | Done | `ows-cli/src/audit.rs` |
 | Crypto object (AES-256-GCM + scrypt) | Done | `ows-signer/src/crypto.rs` |
-| Backward compat (Keystore v3 import) | Not started | No v3 import/re-wrap logic |
+| Keystore v3 import | Not started | No v3 import/re-wrap logic |
 | `~/.ows/keys/` directory + API key files | Not started | No API key system |
 | `~/.ows/policies/` directory + policy files | Not started | No policy system |
 | `~/.ows/plugins/` directory | Not started | Plugins are hardcoded |
@@ -79,11 +79,10 @@ Each wallet is stored as a single JSON file extending the Ethereum Keystore v3 s
 
 ```json
 {
-  "ows_version": 1,
+  "ows_version": 2,
   "id": "3198bc9c-6672-5ab3-d995-4942343ae5b6",
   "name": "agent-treasury",
   "created_at": "2026-02-27T10:30:00Z",
-  "chain_type": "evm",
   "accounts": [
     {
       "account_id": "eip155:8453:0xab16a96D359eC26a11e2C2b3d8f8B8942d5Bfcdb",
@@ -102,7 +101,7 @@ Each wallet is stored as a single JSON file extending the Ethereum Keystore v3 s
     "kdf": "scrypt",
     "kdfparams": {
       "dklen": 32,
-      "n": 262144,
+      "n": 65536,
       "r": 8,
       "p": 1,
       "salt": "ae3cd4e7013836a3df6bd7241b12db061dbe2c6785853cce422d148a624ce0bd"
@@ -117,11 +116,10 @@ Each wallet is stored as a single JSON file extending the Ethereum Keystore v3 s
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `ows_version` | integer | yes | Schema version (currently `1`) |
+| `ows_version` | integer | yes | Schema version (currently `2`) |
 | `id` | string | yes | UUID v4 wallet identifier |
 | `name` | string | yes | Human-readable wallet name |
 | `created_at` | string | yes | ISO 8601 creation timestamp |
-| `chain_type` | string | yes | Primary chain type: `evm`, `solana`, `tron`, `cosmos`, `bitcoin` |
 | `accounts` | array | yes | Derived accounts (see Account object) |
 | `crypto` | object | yes | Encryption parameters (see Crypto object) |
 | `key_type` | string | yes | `mnemonic` (BIP-39) or `private_key` (raw) |
@@ -202,15 +200,15 @@ All signing operations are appended to `~/.ows/logs/audit.jsonl`:
 {
   "timestamp": "2026-02-27T10:35:22Z",
   "wallet_id": "3198bc9c-6672-5ab3-d995-4942343ae5b6",
-  "operation": "sign_transaction",
+  "operation": "broadcast_transaction",
   "chain_id": "eip155:8453",
-  "to": "0x4B0897b0513fdC7C541B6d9D7E929C4e5364D2dB",
-  "value": "1000000",
-  "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-  "policy_result": "allow",
-  "tx_hash": "0xabc123..."
+  "details": "tx_hash=0xabc123..."
 }
 ```
+
+Supported operations: `create_wallet`, `import_wallet`, `export_wallet`, `broadcast_transaction`, `delete_wallet`, `rename_wallet`.
+
+All fields except `timestamp`, `wallet_id`, and `operation` are optional.
 
 The audit log is append-only. Implementations MUST NOT allow deletion or modification of existing entries. Log rotation is permitted (e.g., monthly archives).
 
@@ -219,7 +217,7 @@ The audit log is append-only. Implementations MUST NOT allow deletion or modific
 Any valid Ethereum Keystore v3 file can be imported into an OWS vault. The importer:
 
 1. Reads the v3 JSON
-2. Wraps it in the OWS envelope (adds `ows_version`, `name`, `chain_type: "evm"`, `accounts`)
+2. Wraps it in the OWS envelope (adds `ows_version`, `name`, `accounts`)
 3. Optionally re-encrypts with AES-256-GCM
 
 Exported OWS wallets with `cipher: "aes-128-ctr"` and `key_type: "private_key"` are valid Keystore v3 files (minus the OWS envelope fields, which are ignored by v3 parsers).

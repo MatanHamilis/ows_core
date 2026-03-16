@@ -1,4 +1,4 @@
-# 08 - Wallet Lifecycle
+# 06 - Wallet Lifecycle
 
 > How wallets are created, imported, exported, backed up, recovered, and migrated.
 

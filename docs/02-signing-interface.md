@@ -1,4 +1,4 @@
-# 03 - Signing Interface
+# 02 - Signing Interface
 
 > The core operations exposed by an OWS implementation: signing, sending, and message signing.
 

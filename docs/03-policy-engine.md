@@ -1,4 +1,4 @@
-# 04 - Policy Engine
+# 03 - Policy Engine
 
 > How transaction policies are defined, evaluated, and enforced before any key material is touched.
 

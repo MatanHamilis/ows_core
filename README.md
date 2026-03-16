@@ -119,13 +119,12 @@ Agent / CLI / App
 The full spec lives in [`docs/`](docs/) and at [openwallet.sh](https://openwallet.sh):
 
 1. [Storage Format](docs/01-storage-format.md) — Vault layout, Keystore v3, filesystem permissions
-2. [Chain-Agnostic Addressing](docs/02-chain-agnostic-addressing.md) — CAIP-2/CAIP-10 standards
-3. [Signing Interface](docs/03-signing-interface.md) — sign, signAndSend, signMessage operations
-4. [Policy Engine](docs/04-policy-engine.md) — Pre-signing transaction policies
+2. [Signing Interface](docs/02-signing-interface.md) — sign, signAndSend, signMessage operations
+3. [Policy Engine](docs/03-policy-engine.md) — Pre-signing transaction policies
+4. [Agent Access Layer](docs/04-agent-access-layer.md) — MCP server, native language bindings
 5. [Key Isolation](docs/05-key-isolation.md) — HD derivation paths and key separation
-6. [Agent Access Layer](docs/06-agent-access-layer.md) — MCP server, native language bindings
-7. [Multi-Chain Support](docs/07-multi-chain-support.md) — Chain plugin interface
-8. [Wallet Lifecycle](docs/08-wallet-lifecycle.md) — Creation, recovery, deletion
+6. [Wallet Lifecycle](docs/06-wallet-lifecycle.md) — Creation, recovery, deletion
+7. [Supported Chains](docs/07-supported-chains.md) — Chain families, CAIP identifiers, RPC endpoints
 
 ## License
 

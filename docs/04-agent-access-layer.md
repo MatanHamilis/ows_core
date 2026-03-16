@@ -1,4 +1,4 @@
-# 06 - Agent Access Layer
+# 04 - Agent Access Layer
 
 > How AI agents, CLI tools, and applications access OWS wallets through native language bindings.
 

@@ -1,13 +1,12 @@
 // === Docs config ===
 var SPEC_DOCS = [
   { slug: '01-storage-format',           title: '01 \u2014 Storage Format',           sidebar: '01 \u2014 Storage Format' },
-  { slug: '02-chain-agnostic-addressing', title: '02 \u2014 Chain-Agnostic Addressing', sidebar: '02 \u2014 Addressing' },
-  { slug: '03-signing-interface',         title: '03 \u2014 Signing Interface',         sidebar: '03 \u2014 Signing Interface' },
-  { slug: '04-policy-engine',             title: '04 \u2014 Policy Engine',             sidebar: '04 \u2014 Policy Engine' },
+  { slug: '02-signing-interface',         title: '02 \u2014 Signing Interface',         sidebar: '02 \u2014 Signing Interface' },
+  { slug: '03-policy-engine',             title: '03 \u2014 Policy Engine',             sidebar: '03 \u2014 Policy Engine' },
+  { slug: '04-agent-access-layer',        title: '04 \u2014 Agent Access Layer',        sidebar: '04 \u2014 Agent Access' },
   { slug: '05-key-isolation',             title: '05 \u2014 Key Isolation',             sidebar: '05 \u2014 Key Isolation' },
-  { slug: '06-agent-access-layer',        title: '06 \u2014 Agent Access Layer',        sidebar: '06 \u2014 Agent Access' },
-  { slug: '07-multi-chain-support',       title: '07 \u2014 Multi-Chain Support',       sidebar: '07 \u2014 Multi-Chain' },
-  { slug: '08-wallet-lifecycle',          title: '08 \u2014 Wallet Lifecycle',          sidebar: '08 \u2014 Wallet Lifecycle' },
+  { slug: '06-wallet-lifecycle',          title: '06 \u2014 Wallet Lifecycle',          sidebar: '06 \u2014 Wallet Lifecycle' },
+  { slug: '07-supported-chains',          title: '07 \u2014 Supported Chains',          sidebar: '07 \u2014 Supported Chains' },
 ];
 
 var SDK_DOCS = [
